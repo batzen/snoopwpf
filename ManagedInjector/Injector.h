@@ -12,9 +12,14 @@ using namespace System;
 
 namespace ManagedInjector
 {
-	public ref class Injector : System::Object
+	public ref class Injector sealed : System::Object
 	{
-		public:
+	private:
+		Injector()
+		{
+		}
+
+	public:
 
 		static void Launch(System::IntPtr windowHandle, System::String^ assemblyName, System::String^ className, System::String^ methodName);
 
