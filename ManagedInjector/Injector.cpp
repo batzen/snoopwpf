@@ -11,54 +11,54 @@
 using namespace ManagedInjector;
 
 static unsigned int WM_GOBABYGO = ::RegisterWindowMessage(L"Injector_GOBABYGO!");
-static HHOOK _messageHookHandle;
+static HHOOK MESSAGE_HOOK_HANDLE;
 
 //-----------------------------------------------------------------------------
 //Spying Process functions follow
 //-----------------------------------------------------------------------------
 void Injector::Launch(System::IntPtr windowHandle, System::String^ assembly, System::String^ className, System::String^ methodName)
 {
-	System::String^ assemblyClassAndMethod = assembly + "$" + className + "$" + methodName;
-	pin_ptr<const wchar_t> acmLocal = PtrToStringChars(assemblyClassAndMethod);
+	const auto assemblyClassAndMethod = assembly + "$" + className + "$" + methodName;
+	const pin_ptr<const wchar_t> acmLocal = PtrToStringChars(assemblyClassAndMethod);
 
 	HINSTANCE hinstDLL;
 
-	if (::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCTSTR)&MessageHookProc, &hinstDLL))
+	if (::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, LPCTSTR(&MessageHookProc), &hinstDLL))
 	{
 		LogMessage("GetModuleHandleEx successful.", true);
-		DWORD processID = 0;
-		DWORD threadID = ::GetWindowThreadProcessId((HWND)windowHandle.ToPointer(), &processID);
+		DWORD processId = 0;
+		const auto threadId = ::GetWindowThreadProcessId(HWND(windowHandle.ToPointer()), &processId);
 
-		if (processID)
+		if (processId)
 		{
 			LogMessage("Got process id.", true);
-			HANDLE hProcess = ::OpenProcess(PROCESS_ALL_ACCESS, FALSE, processID);
+			const auto hProcess = ::OpenProcess(PROCESS_ALL_ACCESS, FALSE, processId);
 
 			if (hProcess)
 			{
 				LogMessage("Got process handle.", true);
 
-				int buffLen = (assemblyClassAndMethod->Length + 1) * sizeof(wchar_t);
-				void* acmRemote = ::VirtualAllocEx(hProcess, NULL, buffLen, MEM_COMMIT, PAGE_READWRITE);
+				const int buffLen = (assemblyClassAndMethod->Length + 1) * sizeof(wchar_t);
+				auto acmRemote = ::VirtualAllocEx(hProcess, nullptr, buffLen, MEM_COMMIT, PAGE_READWRITE);
 
 				if (acmRemote)
 				{
 					LogMessage("VirtualAllocEx successful.", true);
 
-					if (::WriteProcessMemory(hProcess, acmRemote, acmLocal, buffLen, NULL))
+					if (::WriteProcessMemory(hProcess, acmRemote, acmLocal, buffLen, nullptr))
 					{
-						_messageHookHandle = ::SetWindowsHookEx(WH_CALLWNDPROC, &MessageHookProc, hinstDLL, threadID);
+						MESSAGE_HOOK_HANDLE = ::SetWindowsHookEx(WH_CALLWNDPROC, &MessageHookProc, hinstDLL, threadId);
 
-						if (_messageHookHandle)
+						if (MESSAGE_HOOK_HANDLE)
 						{
 							LogMessage("SetWindowsHookEx successful.", true);
 
-							if (::SendMessage((HWND)windowHandle.ToPointer(), WM_GOBABYGO, (WPARAM)acmRemote, 0) == false)
+							if (::SendMessage(HWND(windowHandle.ToPointer()), WM_GOBABYGO, WPARAM(acmRemote), 0) == false)
 							{
 								LogMessage("SendMessage failed.", true);
 							}
 
-							if (::UnhookWindowsHookEx(_messageHookHandle) == false)
+							if (::UnhookWindowsHookEx(MESSAGE_HOOK_HANDLE) == false)
 							{
 								LogMessage("UnhookWindowsHookEx failed.", true);
 							}
@@ -97,61 +97,62 @@ void Injector::Launch(System::IntPtr windowHandle, System::String^ assembly, Sys
 	}
 }
 
-void Injector::LogMessage(System::String^ message, bool append)
+void Injector::LogMessage(System::String^ message, const bool append)
 {
-	System::String ^ applicationDataPath = Environment::GetFolderPath(Environment::SpecialFolder::ApplicationData);
+	auto applicationDataPath = Environment::GetFolderPath(Environment::SpecialFolder::ApplicationData);
 	applicationDataPath += "\\Snoop";
 
 	System::IO::Directory::CreateDirectory(applicationDataPath);
 
-	System::String ^ pathname = applicationDataPath + "\\SnoopLog.txt";
+	const auto pathname = applicationDataPath + "\\SnoopLog.txt";
 
 	if (!append)
 	{
 		System::IO::File::Delete(pathname);
 	}
 
-	System::IO::FileInfo ^ fi = gcnew System::IO::FileInfo(pathname);
+	auto fi = gcnew System::IO::FileInfo(pathname);
 
-	System::IO::StreamWriter ^ sw = fi->AppendText();
+	auto sw = fi->AppendText();
 	sw->WriteLine(System::DateTime::Now.ToString("MM/dd/yyyy HH:mm:ss", System::Globalization::CultureInfo::CurrentCulture) + " : " + message);
 	sw->Close();
 }
 
 __declspec(dllexport)
-LRESULT __stdcall MessageHookProc(int nCode, WPARAM wparam, LPARAM lparam)
+LRESULT __stdcall MessageHookProc(const int nCode, const WPARAM wparam, LPARAM lparam)
 {
 	if (nCode == HC_ACTION)
 	{
-		CWPSTRUCT* msg = (CWPSTRUCT*)lparam;
+		const auto msg = reinterpret_cast<CWPSTRUCT*>(lparam);
 
-		if (msg != NULL && msg->message == WM_GOBABYGO)
+		if (msg != nullptr
+			&& msg->message == WM_GOBABYGO)
 		{
 			System::Diagnostics::Debug::WriteLine("Got WM_GOBABYGO message");
 
-			wchar_t* acmRemote = (wchar_t*)msg->wParam;
+			const auto acmRemote = reinterpret_cast<wchar_t*>(msg->wParam);
 
-			String^ acmLocal = gcnew System::String(acmRemote);
+			auto acmLocal = gcnew System::String(acmRemote);
 			System::Diagnostics::Debug::WriteLine(System::String::Format("acmLocal = {0}", acmLocal));
-			cli::array<System::String^>^ acmSplit = acmLocal->Split('$');
+			auto acmSplit = acmLocal->Split('$');
 
 			System::Diagnostics::Debug::WriteLine(String::Format("About to load assembly {0}", acmSplit[0]));
-			System::Reflection::Assembly^ assembly = System::Reflection::Assembly::LoadFile(acmSplit[0]);
+			auto assembly = System::Reflection::Assembly::LoadFile(acmSplit[0]);
 
 			if (assembly != nullptr)
 			{
 				System::Diagnostics::Debug::WriteLine(String::Format("About to load type {0}", acmSplit[1]));
-				System::Type^ type = assembly->GetType(acmSplit[1]);
+				auto type = assembly->GetType(acmSplit[1]);
 
 				if (type != nullptr)
 				{
 					System::Diagnostics::Debug::WriteLine(String::Format("Just loaded the type {0}", acmSplit[1]));
-					System::Reflection::MethodInfo^ methodInfo = type->GetMethod(acmSplit[2], System::Reflection::BindingFlags::Static | System::Reflection::BindingFlags::Public);
+					auto methodInfo = type->GetMethod(acmSplit[2], System::Reflection::BindingFlags::Static | System::Reflection::BindingFlags::Public);
 
 					if (methodInfo != nullptr)
 					{
 						System::Diagnostics::Debug::WriteLine(System::String::Format("About to invoke {0} on type {1}", methodInfo->Name, acmSplit[1]));
-						Object ^ returnValue = methodInfo->Invoke(nullptr, nullptr);
+						auto returnValue = methodInfo->Invoke(nullptr, nullptr);
 
 						if (nullptr == returnValue)
 						{
@@ -165,5 +166,5 @@ LRESULT __stdcall MessageHookProc(int nCode, WPARAM wparam, LPARAM lparam)
 		}
 	}
 
-	return CallNextHookEx(_messageHookHandle, nCode, wparam, lparam);
+	return CallNextHookEx(MESSAGE_HOOK_HANDLE, nCode, wparam, lparam);
 }
